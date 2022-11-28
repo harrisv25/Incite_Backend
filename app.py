@@ -39,7 +39,7 @@ class User(db.Model, UserMixin):
     password = db.Column(db.String(50))
     date_joined = db.Column(db.Date, default=datetime.utcnow)
     # answers=db.Column(ARRAY(db.Integer), nullable = False, default=[])
-    answers = db.Column(db.PickleType(), nullable = False)
+    answers = db.Column(db.PickleType(), nullable = False, default = {})
     # role = db.Column(db.String(50), defualt="user")
     def __init__(self, username, email, password):
         self.username = username
@@ -54,28 +54,14 @@ class User(db.Model, UserMixin):
             'answers' : self.answers
         }
 
-# class Test(db.Model):
-#     __tablename__='tests's
-#     id=db.Column(db.Integer, primary_key=True)
-#     tname = db.Column(db.String(40), unique=True)
-#     desc=db.Column(db.Text)
-#     def __init__(self, tname, desc):
-#         self.tname = tname
-#         self.desc = desc
-#     def to_json(self):
-#         return {
-#             'id' : self.id,
-#             'tname' : self.tname, 
-#             'desc' : self.desc
-#         }
-        
+
 #add a number of people answered section
 class Question(db.Model):
     __tablename__='questions'
     id=db.Column(db.Integer, primary_key=True)
     prompt=db.Column(db.Text)
     answers=db.Column(ARRAY(db.String), nullable = False)
-    #can add author info
+    popanswers=db.Column(ARRAY(db.Integer), nullable = False, default=[])
     def __init__(self, prompt, answers):
         self.prompt = prompt
         self.answers = answers
@@ -160,21 +146,48 @@ def AnswerQuestion():
     answer = payload['answer']['index']
     #update
     user = db.session.query(User).filter(User.id==user_id).first()
-    # user.answers.append([question_id, answer]) #consider updating the answer attribute to an object
     user.answers[question_id] = answer
+    # print(user.answers, file=sys.stderr)
     flag_modified(user, "answers")
     db.session.merge(user)
     db.session.flush()
     db.session.commit()
-    return jsonify(1)
-
-@app.route('/delete/<int:test_id>', methods=['GET', 'POST'])
-@cross_origin(supports_credentials=True)
-def delete_test(test_id):
-    test = Test.query.get(test_id)
-    db.session.delete(test)
+    question = db.session.query(Question).filter(Question.id==question_id).first()
+    question.popanswers.append(answer)
+    flag_modified(question, "popanswers")
+    db.session.merge(question)
+    db.session.flush()
     db.session.commit()
-    return redirect(url_for('/'))
+    return jsonify(user.answers)
+    # return jsonify(1)
+    
+
+@app.route('/LoadQuestion/<int:user_id>', methods=['GET', 'POST'])
+@cross_origin(supports_credentials=True)
+def LoadQuestion(user_id):
+    payload = request.get_json()
+    # print(payload['answers'], file=sys.stderr)
+    questions = []
+    answers = []
+    percent = []
+    user = db.session.query(User).filter(User.id==user_id).first()
+    # print(user.answers, file=sys.stderr)
+    for q in payload['answers']:
+        question = db.session.query(Question).filter(Question.id==q).first()
+        questions.append(question.prompt)
+        answers.append(question.answers)
+        percent.append(round(question.popanswers.count(str(user.answers[question.id]))/len(question.popanswers), 2))
+    # print(percent, file=sys.stderr)
+    return jsonify([questions, answers, percent])
+
+
+@app.route('/delete/<int:user_id>', methods=['GET', 'POST'])
+@cross_origin(supports_credentials=True)
+def delete_test(user_id):
+    user = User.query.get(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify(1)
 
 
 @app.route('/Profile/<int:user_id>', methods=['GET', 'POST'])
